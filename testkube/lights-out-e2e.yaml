@@ -37,6 +37,9 @@ spec:
     image: mcr.microsoft.com/playwright:v1.49.1-noble
     workingDir: /data/repo
     env:
+    # The clone step stores the GitHub token in git's config under $HOME; "/" isn't writable there.
+    - name: HOME
+      value: /tmp
     - name: CI
       value: "true"
     - name: BASE_URL
