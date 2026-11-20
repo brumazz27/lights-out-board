@@ -1,0 +1,67 @@
+# Runs the Playwright end-to-end suite for the Lights Out Board.
+# The tests start their own copy of the page inside the runner pod, so nothing has to be deployed first.
+#
+#   testkube create testworkflow -f testkube/lights-out-e2e.yaml
+#   testkube run testworkflow lights-out-e2e -f
+#
+# The repository is private, so the runner needs a GitHub token to clone it. Create the secret in
+# the namespace where your Testkube runner executes workflows (see README):
+#   kubectl create secret generic lights-out-git -n <runner-namespace> --from-literal=token=<github-token>
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflow
+metadata:
+  name: lights-out-e2e
+  labels:
+    app: lights-out-board
+    tool: playwright
+spec:
+  content:
+    git:
+      uri: https://github.com/brumazz27/lights-out-board
+      revision: testkube-e2e # switch to main once this branch is merged
+      usernameFrom:
+        secretKeyRef:
+          name: lights-out-git
+          key: username
+          optional: true
+      tokenFrom:
+        secretKeyRef:
+          name: lights-out-git
+          key: token
+  config:
+    project:
+      type: string
+      default: all
+      description: Which Playwright project to run (all, desktop or phone)
+    baseUrl:
+      type: string
+      default: ""
+      description: Test an already running copy instead of the bundled server (for example http://lights-out.default.svc)
+  container:
+    image: mcr.microsoft.com/playwright:v1.49.1-noble
+    workingDir: /data/repo
+    env:
+    - name: CI
+      value: "true"
+    - name: BASE_URL
+      value: "{{ config.baseUrl }}"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  steps:
+  - name: Install dependencies
+    shell: npm ci --no-audit --no-fund
+  - name: Run Playwright tests
+    shell: |
+      if [ "{{ config.project }}" = "all" ]; then
+        npx playwright test
+      else
+        npx playwright test --project "{{ config.project }}"
+      fi
+  - name: Save test report
+    condition: always
+    artifacts:
+      paths:
+      - test-results/**
+      - playwright-report/**
