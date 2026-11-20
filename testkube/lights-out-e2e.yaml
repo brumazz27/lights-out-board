@@ -19,11 +19,7 @@ spec:
     git:
       uri: https://github.com/brumazz27/lights-out-board
       revision: testkube-e2e # switch to main once this branch is merged
-      usernameFrom:
-        secretKeyRef:
-          name: lights-out-git
-          key: username
-          optional: true
+      username: brumazz27
       tokenFrom:
         secretKeyRef:
           name: lights-out-git
