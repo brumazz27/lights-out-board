@@ -1,0 +1,266 @@
+<title>Lights Out Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: amber signal band header, then a two-column workbench (form left, sightings feed right) that stacks on phones */
+:root {
+  --bg: #f3f2ee; --surface: #ffffff; --fg: #1d1f22; --muted: #646a72; --line: #dcdad3;
+  --amber: #e89a0c; --amber-ink: #6b4400; --amber-soft: #fdf0d5;
+  --red: #c8372d; --green: #2f7d4f; --plate-bg: #fbfbf8; --plate-ink: #1a3a6b;
+  --band: #24272b; --band-fg: #f3f2ee;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Inter", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #16181b; --surface: #1f2226; --fg: #eceae4; --muted: #9aa0a8; --line: #33373d;
+  --amber: #f2ab2e; --amber-ink: #ffd68a; --amber-soft: #3a2c10;
+  --red: #ec6a5f; --green: #5dbb84; --plate-bg: #e9e8e2; --plate-ink: #1a3a6b;
+  --band: #0e0f11; --band-fg: #eceae4; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #16181b; --surface: #1f2226; --fg: #eceae4; --muted: #9aa0a8; --line: #33373d;
+  --amber: #f2ab2e; --amber-ink: #ffd68a; --amber-soft: #3a2c10;
+  --red: #ec6a5f; --green: #5dbb84; --plate-bg: #e9e8e2; --plate-ink: #1a3a6b;
+  --band: #0e0f11; --band-fg: #eceae4; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body) }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+
+header { background: var(--band); color: var(--band-fg); border-bottom: 6px solid var(--amber) }
+header .wrap { padding-block: 28px 24px; display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px }
+h1 { font: 700 clamp(2.2rem, 6vw, 3.4rem)/0.95 var(--display); letter-spacing: 0.01em; margin: 0; text-transform: uppercase; text-wrap: balance }
+h1 .lamp { display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--amber); margin-right: 0.25em; vertical-align: 0.05em; box-shadow: 0 0 18px var(--amber) }
+@media (prefers-reduced-motion: no-preference) { h1 .lamp { animation: blink 1.4s steps(1) infinite } }
+@keyframes blink { 50% { opacity: 0.25; box-shadow: none } }
+.tagline { margin: 8px 0 0; color: color-mix(in srgb, var(--band-fg) 75%, transparent); max-width: 52ch }
+.tally { display: flex; gap: 20px; font-variant-numeric: tabular-nums }
+.tally div { text-align: right }
+.tally b { display: block; font: 700 2rem/1 var(--display) }
+.tally span { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75 }
+
+main .wrap { padding-block: 28px 48px; display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 28px; align-items: start }
+@media (max-width: 820px) { main .wrap { grid-template-columns: minmax(0, 1fr) } }
+
+h2 { font: 700 1.5rem/1.1 var(--display); text-transform: uppercase; letter-spacing: 0.02em; margin: 0 0 4px }
+.sub { color: var(--muted); margin: 0 0 18px; font-size: 0.9rem }
+
+form { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 16px }
+label, legend { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted) }
+.field { display: grid; gap: 6px }
+input, select, textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; width: 100% }
+textarea { resize: vertical; min-height: 64px }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, .chip input:focus-visible + span { outline: 2px solid var(--amber); outline-offset: 2px }
+#plate { font-family: var(--mono); font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px }
+.chips { display: flex; flex-wrap: wrap; gap: 6px }
+.chip input { position: absolute; opacity: 0; pointer-events: none }
+.chip span { display: inline-block; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.85rem; cursor: pointer; user-select: none; background: var(--bg) }
+.chip input:checked + span { background: var(--amber-soft); border-color: var(--amber); color: var(--amber-ink); font-weight: 600 }
+.primary { font: 700 1.05rem var(--display); text-transform: uppercase; letter-spacing: 0.06em; background: var(--amber); color: #241700; border: 0; border-radius: 6px; padding: 12px; cursor: pointer }
+.primary:disabled { opacity: 0.5; cursor: not-allowed }
+.msg { font-size: 0.85rem; min-height: 1.3em; margin: 0 }
+.msg.err { color: var(--red) } .msg.ok { color: var(--green) }
+
+.feedhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 14px }
+.filters { display: flex; flex-wrap: wrap; gap: 8px }
+.filters select { width: auto }
+.feed { display: grid; gap: 12px }
+.card { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--amber); border-radius: 8px; padding: 14px 16px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px }
+.card.fixed { border-left-color: var(--green); opacity: 0.72 }
+.plate { grid-row: span 2; align-self: start; font: 700 1rem var(--mono); letter-spacing: 0.12em; color: var(--plate-ink); background: var(--plate-bg); border: 2px solid var(--plate-ink); border-radius: 5px; padding: 6px 10px; min-width: 7.5em; text-align: center; white-space: nowrap }
+.plate small { display: block; font: 600 0.55rem var(--body); letter-spacing: 0.1em; color: var(--plate-ink); opacity: 0.7 }
+.car { font-weight: 600 }
+.meta { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere }
+.tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px }
+.tag { font-size: 0.75rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--amber-soft); color: var(--amber-ink) }
+.tag.fixedtag { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green) }
+.notes { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere }
+.actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end }
+.ghost { font: 500 0.8rem var(--body); background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer }
+.ghost:hover { color: var(--fg); border-color: var(--muted) }
+.ghost.danger:hover { color: var(--red); border-color: var(--red) }
+.empty { border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; text-align: center; color: var(--muted) }
+.empty strong { display: block; font: 700 1.3rem var(--display); text-transform: uppercase; color: var(--fg); margin-bottom: 4px }
+.note { font-size: 0.85rem; color: var(--muted); margin: 0 0 12px }
+footer { color: var(--muted); font-size: 0.8rem; text-align: center; padding-block: 0 32px }
+</style>
+
+<header>
+  <div class="wrap">
+    <div>
+      <h1><span class="lamp" aria-hidden="true"></span>Lights Out Board</h1>
+      <p class="tagline">Spotted a car with a dead headlight, a broken tail light or a soft tire? Log it here so the owner can get a friendly heads-up before it becomes a ticket or a blowout.</p>
+    </div>
+    <div class="tally" aria-live="polite">
+      <div><b id="t-open">0</b><span>Open</span></div>
+      <div><b id="t-fixed">0</b><span>Fixed</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section aria-labelledby="form-h">
+      <h2 id="form-h">Report a sighting</h2>
+      <p class="sub">Takes about 20 seconds. Only describe the car; don't include anyone's personal details.</p>
+      <form id="form" novalidate>
+        <div class="row">
+          <div class="field"><label for="plate">Plate (optional)</label><input id="plate" maxlength="10" placeholder="7ABC123" autocomplete="off"></div>
+          <div class="field"><label for="state">State / region</label><input id="state" maxlength="20" placeholder="CA"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="color">Color</label><input id="color" maxlength="20" placeholder="Silver"></div>
+          <div class="field"><label for="model">Make &amp; model</label><input id="model" maxlength="40" placeholder="Honda Civic"></div>
+        </div>
+        <fieldset>
+          <legend>What's wrong? (pick all that apply)</legend>
+          <div class="chips" id="issues"></div>
+        </fieldset>
+        <div class="field"><label for="where">Where you saw it</label><input id="where" maxlength="80" placeholder="Corner of 5th &amp; Main, Trader Joe's lot"></div>
+        <div class="field"><label for="when">When</label><input id="when" type="datetime-local"></div>
+        <div class="field"><label for="notes">Notes</label><textarea id="notes" maxlength="400" placeholder="Rear driver-side tire looked almost flat."></textarea></div>
+        <button class="primary" id="submit" type="submit">Post report</button>
+        <p class="msg" id="msg" role="status"></p>
+      </form>
+    </section>
+
+    <section aria-labelledby="feed-h">
+      <div class="feedhead">
+        <div><h2 id="feed-h">Recent sightings</h2><p class="sub" style="margin:0">Newest first. Mark a car as fixed once its owner sorts it out.</p></div>
+        <div class="filters">
+          <label for="f-issue" class="sr" hidden>Filter by issue</label>
+          <select id="f-issue" aria-label="Filter by issue"><option value="">All issues</option></select>
+          <select id="f-status" aria-label="Filter by status"><option value="open">Open</option><option value="fixed">Fixed</option><option value="">All</option></select>
+        </div>
+      </div>
+      <p class="note" id="conn" hidden></p>
+      <div class="feed" id="feed">
+        <div class="empty"><strong>Loading sightings…</strong>Reports from everyone using this board will show up here.</div>
+      </div>
+    </section>
+  </div>
+</main>
+<footer><div class="wrap">A demo community board. Reports are visible to everyone who can open this page.</div></footer>
+
+<script>
+const ISSUES = [
+  ["headlight", "Headlight out"], ["taillight", "Tail light out"], ["brake", "Brake light out"],
+  ["signal", "Turn signal out"], ["plate-light", "Plate light out"], ["low-tire", "Low tire"],
+  ["flat", "Flat tire"], ["lens", "Cracked lens"], ["other", "Other"]
+];
+const label = Object.fromEntries(ISSUES);
+const $ = id => document.getElementById(id);
+const chips = $("issues"), fIssue = $("f-issue");
+for (const [k, v] of ISSUES) {
+  chips.insertAdjacentHTML("beforeend", `<label class="chip"><input type="checkbox" id="i-${k}" value="${k}"><span>${v}</span></label>`);
+  fIssue.insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`);
+}
+const pad = n => String(n).padStart(2, "0");
+function nowLocal() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+$("when").value = nowLocal();
+
+let reports = [], db = null, myId = null, canWrite = true;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+function fmtWhen(s) {
+  const d = new Date(s); if (isNaN(d)) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function render() {
+  const fi = fIssue.value, fs = $("f-status").value;
+  $("t-open").textContent = reports.filter(r => !r.fixed).length;
+  $("t-fixed").textContent = reports.filter(r => r.fixed).length;
+  const list = reports
+    .filter(r => !fi || (r.issues || []).includes(fi))
+    .filter(r => !fs || (fs === "fixed" ? r.fixed : !r.fixed))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const feed = $("feed");
+  if (!list.length) {
+    feed.innerHTML = reports.length
+      ? `<div class="empty"><strong>Nothing matches</strong>Try a different issue or status filter.</div>`
+      : `<div class="empty"><strong>No sightings yet</strong>Use the form to post the first one. A plate isn't required; color, model and location are enough.</div>`;
+    return;
+  }
+  feed.innerHTML = list.map(r => `
+    <article class="card${r.fixed ? " fixed" : ""}">
+      <div class="plate">${esc(r.plate || "NO PLATE")}<small>${esc(r.state || "—")}</small></div>
+      <div class="car">${esc([r.color, r.model].filter(Boolean).join(" ") || "Unknown vehicle")}</div>
+      <div class="meta">${esc(r.where || "Location not given")}${r.when ? " · " + esc(fmtWhen(r.when)) : ""}</div>
+      <div class="tags">${(r.issues || []).map(k => `<span class="tag">${esc(label[k] || k)}</span>`).join("")}${r.fixed ? `<span class="tag fixedtag">Fixed</span>` : ""}</div>
+      ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ""}
+      ${canWrite && db ? `<div class="actions">
+        <button class="ghost" data-act="toggle" data-id="${esc(r.id)}">${r.fixed ? "Reopen" : "Mark fixed"}</button>
+        ${r.by && r.by === myId ? `<button class="ghost danger" data-act="del" data-id="${esc(r.id)}">Delete</button>` : ""}
+      </div>` : ""}
+    </article>`).join("");
+}
+fIssue.addEventListener("change", render);
+$("f-status").addEventListener("change", render);
+
+function setMsg(t, cls) { const m = $("msg"); m.textContent = t; m.className = "msg " + (cls || ""); }
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!db) { setMsg("Reports can't be saved right now. Open this page while signed in to claude.ai.", "err"); return; }
+  const issues = [...chips.querySelectorAll("input:checked")].map(i => i.value);
+  const color = $("color").value.trim(), model = $("model").value.trim(), where = $("where").value.trim();
+  if (!issues.length) return setMsg("Pick at least one problem you noticed.", "err");
+  if (!color && !model && !$("plate").value.trim()) return setMsg("Add a plate, color or model so the car can be recognized.", "err");
+  if (!where) return setMsg("Add where you saw the car.", "err");
+  const body = {
+    plate: $("plate").value.trim().toUpperCase(), state: $("state").value.trim().toUpperCase(),
+    color, model, issues, where, when: $("when").value, notes: $("notes").value.trim(),
+    fixed: false, createdAt: Date.now(), by: myId || ""
+  };
+  $("submit").disabled = true;
+  try {
+    await db.collection("reports").add(body);
+    $("form").reset(); $("when").value = nowLocal();
+    setMsg("Posted. Thanks for looking out.", "ok");
+  } catch (err) {
+    if (err && err.code === "invalid_argument") { canWrite = false; setMsg("You have view-only access to this board, so you can't post reports.", "err"); render(); }
+    else if (err && err.code === "quota_exceeded") setMsg("The board is full. Delete some old fixed reports first.", "err");
+    else setMsg("Couldn't post the report. Check your connection and try again.", "err");
+  } finally { $("submit").disabled = !canWrite; }
+});
+
+$("feed").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]"); if (!b || !db) return;
+  const ref = db.collection("reports").doc(b.dataset.id);
+  const r = reports.find(x => x.id === b.dataset.id); if (!r) return;
+  b.disabled = true;
+  try {
+    if (b.dataset.act === "toggle") await ref.update({ fixed: !r.fixed });
+    else if (b.dataset.confirm) await ref.delete();
+    else { b.dataset.confirm = "1"; b.textContent = "Tap again to delete"; b.disabled = false; return; }
+  } catch { b.disabled = false; setMsg("That change didn't save. Try again.", "err"); }
+});
+
+(async () => {
+  const [d, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+  db = d;
+  if (user) {
+    try { myId = await user.id(); } catch {}
+    try { const w = await user.can("data.write"); if (w === false) canWrite = false; } catch {}
+  }
+  if (!canWrite) { $("submit").disabled = true; setMsg("You have view-only access, so you can read reports but not post them."); }
+  if (!db) {
+    $("feed").innerHTML = `<div class="empty"><strong>Sign in to see sightings</strong>The shared list loads when you open this page while signed in to claude.ai.</div>`;
+    $("submit").disabled = true;
+    return;
+  }
+  const conn = $("conn");
+  const timer = setTimeout(() => { conn.hidden = false; conn.textContent = "Still connecting to the shared list. It may be out of date."; }, 10000);
+  db.collection("reports").onSnapshot(snap => {
+    if (!snap.metadata.fromCache) { clearTimeout(timer); conn.hidden = true; }
+    reports = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    render();
+  }, () => {
+    clearTimeout(timer); conn.hidden = false;
+    conn.textContent = "The shared list stopped updating. Reload the page to reconnect.";
+  });
+})();
+</script>
