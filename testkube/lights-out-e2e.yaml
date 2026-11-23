@@ -3,10 +3,6 @@
 #
 #   testkube create testworkflow -f testkube/lights-out-e2e.yaml
 #   testkube run testworkflow lights-out-e2e -f
-#
-# The repository is private, so the runner needs a GitHub token to clone it. Create the secret in
-# the namespace where your Testkube runner executes workflows (see README):
-#   kubectl create secret generic lights-out-git -n <runner-namespace> --from-literal=token=<github-token>
 apiVersion: testworkflows.testkube.io/v1
 kind: TestWorkflow
 metadata:
@@ -19,11 +15,6 @@ spec:
     git:
       uri: https://github.com/brumazz27/lights-out-board
       revision: testkube-e2e # switch to main once this branch is merged
-      username: brumazz27
-      tokenFrom:
-        secretKeyRef:
-          name: lights-out-git
-          key: token
   config:
     project:
       type: string
@@ -37,7 +28,7 @@ spec:
     image: mcr.microsoft.com/playwright:v1.49.1-noble
     workingDir: /data/repo
     env:
-    # The clone step stores the GitHub token in git's config under $HOME; "/" isn't writable there.
+    # git and npm write config and caches under $HOME; "/" isn't writable in the runner pod.
     - name: HOME
       value: /tmp
     - name: CI

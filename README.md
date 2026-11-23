@@ -36,20 +36,17 @@ BASE_URL=http://localhost:4173 npm test
 
 The workflow clones this repository, installs dependencies in the official Playwright image (`mcr.microsoft.com/playwright:v1.49.1-noble`, matching `@playwright/test` 1.49.1), runs the suite, and saves the JUnit and HTML reports as artifacts. Testkube reads the JUnit file to show results per test.
 
-1. The repository is private, so give the runner a GitHub token that can read it (a fine-grained token with **Contents: read** on this repo). Create the secret in the namespace your runner executes in:
+The repository is public, so the runner clones it without credentials. Create the workflow and run it (add `--target name=<runner>` to pick a runner):
 
-   ```bash
-   kubectl create secret generic lights-out-git -n <runner-namespace> --from-literal=token=<github-token>
-   ```
+```bash
+testkube create testworkflow -f testkube/lights-out-e2e.yaml
+```
 
-   If you make the repository public, delete the `usernameFrom` and `tokenFrom` blocks instead.
+```bash
+testkube run testworkflow lights-out-e2e -f
+```
 
-2. Create the workflow and run it:
-
-   ```bash
-   testkube create testworkflow -f testkube/lights-out-e2e.yaml
-   testkube run testworkflow lights-out-e2e -f
-   ```
+After changing the YAML, push it with `testkube create testworkflow -f testkube/lights-out-e2e.yaml --update`.
 
 Options (`--config key=value`):
 
