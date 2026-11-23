@@ -1,0 +1,43 @@
+# Shared setup for Playwright workflows: clone the repo at a revision, use the Playwright
+# image, and install dependencies. Workflows add it with:
+#   use:
+#   - name: lights-out-playwright
+#     config:
+#       revision: "{{ config.revision }}"
+#
+#   testkube create testworkflowtemplate -f testkube/templates/lights-out-playwright.yaml --update
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflowTemplate
+metadata:
+  name: lights-out-playwright
+  labels:
+    app: lights-out-board
+spec:
+  config:
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit to test
+  content:
+    git:
+      uri: https://github.com/brumazz27/lights-out-board
+      revision: "{{ config.revision }}"
+  container:
+    image: mcr.microsoft.com/playwright:v1.49.1-noble
+    workingDir: /data/repo
+    env:
+    # git and npm write config and caches under $HOME; "/" isn't writable in the runner pod.
+    - name: HOME
+      value: /tmp
+    - name: CI
+      value: "true"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  steps:
+  - name: Install dependencies
+    timeout: 5m
+    retry:
+      count: 2
+    shell: npm ci --no-audit --no-fund

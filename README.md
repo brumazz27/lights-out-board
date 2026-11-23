@@ -6,8 +6,10 @@ A community board for reporting cars seen with burnt-out headlights, tail lights
 | --- | --- |
 | `lights-out.html` | The page. People post a sighting (plate optional, color, make and model, problem, location, time, notes) and see the reports in a list they can filter by problem and by open or fixed. |
 | `scripts/serve.mjs` | A tiny dependency-free server that wraps the page in a full HTML document and serves it on port 4173 (`/healthz` for readiness). |
-| `tests/` | Playwright end-to-end tests. |
-| `testkube/lights-out-e2e.yaml` | Testkube TestWorkflow that runs the tests. |
+| `tests/` | Playwright end-to-end tests, and the k6 load test in `tests/load/`. |
+| `testkube/` | Testkube workflows, templates and the trigger (see below). |
+| `k8s/app.yaml` | The app deployed in the cluster (`brubot` namespace), watched by the trigger. |
+| `.github/workflows/testkube.yml` | Runs `lights-out-e2e` in Testkube on every pull request. |
 
 ## Where reports are stored
 
@@ -32,28 +34,65 @@ To test a copy that is already running somewhere, set `BASE_URL`, and Playwright
 BASE_URL=http://localhost:4173 npm test
 ```
 
-## Run the tests in Testkube
+## Testkube
 
-The workflow clones this repository and runs the suite in the official Playwright image (`mcr.microsoft.com/playwright:v1.49.1-noble`, matching `@playwright/test` 1.49.1). The app runs separately, as a [Testkube service](https://docs.testkube.io/articles/test-workflows-services):
+Everything runs in the `default` environment of the Node Engines org, on the `brubot` runner (each workflow sets it as its default target). The repository is public, so runners clone it without credentials.
 
-1. **Install dependencies**: `npm ci` in the test pod.
-2. **Start services**: Testkube starts an `app` pod from `node:22-alpine`, copies `lights-out.html` and `scripts/` into it, runs `scripts/serve.mjs`, and waits until `GET /healthz` on port 4173 answers.
-3. **Run Playwright tests**: the tests run against `http://{{ services.app.0.ip }}:4173`, the service's pod IP, so they reach the app over the cluster network instead of `localhost`. The address is set inside each script, because container env is computed before services exist. Only one of these two steps runs:
-   - **running app tests in parallel** (`project` = `all`): two parallel workers, `desktop` and `phone`, each in its own pod, run at the same time. Each worker gets a copy of the repo and sends its `test-results/` and `playwright-report/` back into a folder named after its project.
-   - **running app test** (`project` = `desktop` or `phone`): a single run of that project in the test pod, with no workers.
-4. **Stop services**: Testkube stops the app and keeps its logs with the execution.
-5. **Save test report**: the JUnit and HTML reports are saved as artifacts, even when tests fail (`test-results/desktop/junit.xml` and `test-results/phone/junit.xml` for a parallel run). Testkube reads the JUnit files to show results per test.
+### Templates (`testkube/templates/`)
 
-The repository is public, so the runner clones it without credentials. Create the workflow and run it (add `--target name=<runner>` to pick a runner):
+| Template | What it adds |
+| --- | --- |
+| `lights-out-playwright` | Clones the repo at `revision`, uses `mcr.microsoft.com/playwright:v1.49.1-noble` (matching `@playwright/test` 1.49.1), and installs dependencies (5-minute timeout, retried twice). |
+| `lights-out-app` | Runs the app as a [service](https://docs.testkube.io/articles/test-workflows-services) for the whole execution: `node:22-alpine` fetches `lights-out.html` and `scripts/` at `revision` and serves them; steps reach it at `http://{{ services.app.0.ip }}:4173` once `GET /healthz` answers. |
+
+Workflows add them with `use:` and pass their own `revision` through, so one setting picks the code for both the tests and the app.
+
+### Workflows (`testkube/`)
+
+| Workflow | What it does | Options (`--config key=value`) |
+| --- | --- | --- |
+| `lights-out-e2e` | Playwright against the app service. With `project=all`, desktop and phone run at the same time as two parallel workers, each sending its reports back to `test-results/<project>/`; with `desktop` or `phone`, one run with no workers. Runs nightly at 06:00 UTC. | `project`: `all` (default), `desktop`, `phone` (a dropdown in the dashboard; other values fail straight away). `revision`: default `main`. |
+| `lights-out-e2e-sharded` | Splits the whole suite into shards that run at the same time, then merges their blob reports into one HTML report and one JUnit file. | `shards`: default 3. `revision`. |
+| `lights-out-k6` | k6 load test (`tests/load/smoke.js`) against the app service. Fails if more than 1% of requests fail or the 95th percentile is over 500 ms; saves `summary.json`. | `vus`: default 10. `duration`: default `30s`. `revision`. |
+| `lights-out-deployed` | Waits for the deployed app (`k8s/app.yaml`) to answer, then runs the desktop tests against it. Started by the trigger. | `url`: default `http://lights-out.brubot.svc.cluster.local:4173`. |
+| `lights-out-suite` | Runs `lights-out-e2e`, `lights-out-e2e-sharded` and `lights-out-k6` one after another. | `revision`. |
+
+Limits: test steps time out after 10 minutes and are retried once; runs wait at most 10 minutes in the queue (`lights-out-e2e`) and are stopped after 30 minutes (15 for k6 and the deployed smoke test, 60 for the suite).
+
+### Trigger (`testkube/triggers/lights-out-deployed.yaml`)
+
+When the `lights-out` Deployment in the `brubot` namespace changes (a rollout, a restart, a new image), Testkube runs `lights-out-deployed`. Only one run at a time, since a rollout changes the Deployment several times. Try it:
 
 ```bash
-testkube create testworkflow -f testkube/lights-out-e2e.yaml
+kubectl rollout restart deployment/lights-out -n brubot
+```
+
+### GitHub Actions (`.github/workflows/testkube.yml`)
+
+Every pull request runs `lights-out-e2e` against the PR's own commit (`revision` = the head SHA) and fails the check if the tests fail. It uses the repo variables `TESTKUBE_ORG_ID` and `TESTKUBE_ENV_ID` and the secret `TESTKUBE_API_TOKEN`.
+
+### Failure notifications
+
+Not set up yet. To get a call (for example a Slack incoming webhook) when a Lights Out Board workflow fails or is aborted:
+
+```bash
+testkube create webhook --name lights-out-failures --uri <URL> --events end-testworkflow-failed --events end-testworkflow-aborted --selector app=lights-out-board
+```
+
+### Create or update everything
+
+```bash
+for f in testkube/templates/*.yaml; do testkube create testworkflowtemplate -f "$f" --update; done
 ```
 
 ```bash
-testkube run testworkflow lights-out-e2e -f
+for f in testkube/*.yaml; do testkube create testworkflow -f "$f" --update; done
 ```
 
-After changing the YAML, push it with `testkube create testworkflow -f testkube/lights-out-e2e.yaml --update`.
+```bash
+testkube create testtrigger -f testkube/triggers/lights-out-deployed.yaml --update
+```
 
-Option (`--config key=value`): `project` is `all` (default), `desktop` or `phone`. The dashboard shows it as a dropdown; any other value fails the "running app test" step straight away.
+```bash
+kubectl apply -f k8s/app.yaml
+```

@@ -1,0 +1,63 @@
+# Load-tests the Lights Out Board with k6 against the app running as a Testkube service.
+# Fails if more than 1% of requests fail or the 95th percentile is over 500 ms.
+#
+#   testkube create testworkflow -f testkube/lights-out-k6.yaml --update
+#   testkube run testworkflow lights-out-k6 --config vus=20 --config duration=1m -f
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflow
+metadata:
+  name: lights-out-k6
+  labels:
+    app: lights-out-board
+    tool: k6
+spec:
+  config:
+    vus:
+      type: integer
+      default: 10
+      description: Virtual users
+    duration:
+      type: string
+      default: 30s
+      description: How long to run, e.g. 30s or 2m
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit to test
+
+  content:
+    git:
+      uri: https://github.com/brumazz27/lights-out-board
+      revision: "{{ config.revision }}"
+      paths:
+      - tests/load
+
+  use:
+  - name: lights-out-app
+    config:
+      revision: "{{ config.revision }}"
+
+  execution:
+    target:
+      match:
+        name:
+        - brubot
+  job:
+    activeDeadlineSeconds: 900
+
+  steps:
+  - name: running load test
+    timeout: 10m
+    workingDir: /data/repo
+    run:
+      image: grafana/k6:0.54.0
+      shell: |
+        mkdir -p /data/artifacts
+        k6 run tests/load/smoke.js \
+          -e BASE_URL="http://{{ services.app.0.ip }}:4173" \
+          -e VUS="{{ config.vus }}" -e DURATION="{{ config.duration }}" \
+          --summary-export /data/artifacts/summary.json
+    artifacts:
+      workingDir: /data/artifacts
+      paths:
+      - summary.json

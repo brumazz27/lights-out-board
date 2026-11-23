@@ -1,0 +1,44 @@
+# Runs every Lights Out Board workflow as one suite: functional tests, then the sharded run,
+# then the load test. One after another, so they don't compete for the node's CPU.
+#
+#   testkube create testworkflow -f testkube/lights-out-suite.yaml --update
+#   testkube run testworkflow lights-out-suite -f
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflow
+metadata:
+  name: lights-out-suite
+  labels:
+    app: lights-out-board
+    kind: suite
+spec:
+  config:
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit to test in every workflow
+  execution:
+    target:
+      match:
+        name:
+        - brubot
+  job:
+    activeDeadlineSeconds: 3600
+  steps:
+  - name: running all Lights Out Board workflows
+    timeout: 45m
+    execute:
+      parallelism: 1
+      workflows:
+      - name: lights-out-e2e
+        config:
+          project: all
+          revision: "{{ config.revision }}"
+      - name: lights-out-e2e-sharded
+        config:
+          shards: 3
+          revision: "{{ config.revision }}"
+      - name: lights-out-k6
+        config:
+          vus: 10
+          duration: 30s
+          revision: "{{ config.revision }}"
