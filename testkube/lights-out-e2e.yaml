@@ -64,16 +64,18 @@ spec:
           requests:
             cpu: 100m
             memory: 64Mi
+    steps:
     # The service address is only known once the service is up, so it's set inside the script
     # (container env is computed before services start). Playwright skips its own server when BASE_URL is set.
-    shell: |
-      export BASE_URL="http://{{ services.app.0.ip }}:4173"
-      echo "Testing $BASE_URL"
-      if [ "{{ config.project }}" = "all" ]; then
-        npx playwright test
-      else
-        npx playwright test --project "{{ config.project }}"
-      fi
+    - name: running app test
+      shell: |
+        export BASE_URL="http://{{ services.app.0.ip }}:4173"
+        echo "Testing $BASE_URL"
+        if [ "{{ config.project }}" = "all" ]; then
+          npx playwright test
+        else
+          npx playwright test --project "{{ config.project }}"
+        fi
 
   - name: Save test report
     condition: always
