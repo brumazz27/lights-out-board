@@ -9,6 +9,9 @@ const port = Number(process.env.PORT || 4173);
 const head =
   '<!doctype html><html><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+  // Same small reset claude.ai adds when it publishes the page, so tests see what viewers see.
+  "<style>:root{color-scheme:light;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}" +
+  "body{margin:0;font:14px/1.4 system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>" +
   "</head><body>";
 
 createServer(async (req, res) => {

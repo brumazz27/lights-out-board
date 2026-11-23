@@ -125,14 +125,24 @@ test("deletes a report only after a second tap", async ({ page }) => {
 });
 
 test("escapes text people type", async ({ page }) => {
-  await fillReport(page, { color: "<img src=x onerror=alert(1)>", issues: ["Other"], where: "<b>here</b>" });
+  // Color allows 20 characters, so the longer payload goes in Notes.
+  await fillReport(page, { color: "<b>Red</b>", issues: ["Other"], where: "<b>here</b>", notes: "<img src=x onerror=alert(1)>" });
   await page.getByRole("button", { name: "Post report" }).click();
   const card = cards(page).first();
+  await expect(card).toContainText("<b>Red</b>");
   await expect(card).toContainText("<img src=x onerror=alert(1)>");
   await expect(card.locator("img, b")).toHaveCount(0);
 });
 
 test("never scrolls sideways", async ({ page }) => {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+  const { overflow, offenders } = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const offenders = [...document.querySelectorAll("body *")]
+      .map(el => ({ el, r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && r.right > vw + 1)
+      .slice(0, 8)
+      .map(({ el, r }) => `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${typeof el.className === "string" && el.className ? "." + el.className.trim().split(/\s+/).join(".") : ""} left=${Math.round(r.left)} right=${Math.round(r.right)} position=${getComputedStyle(el).position}`);
+    return { overflow: document.documentElement.scrollWidth - vw, offenders };
+  });
+  expect(overflow, `Elements past the right edge:\n${offenders.join("\n")}`).toBeLessThanOrEqual(0);
 });
