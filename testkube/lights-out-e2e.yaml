@@ -20,6 +20,12 @@ spec:
     project:
       type: string
       default: all
+      # enum makes the Testkube dashboard show a dropdown. CLI/API runs can still pass other values,
+      # so the test step checks the value too.
+      enum:
+      - all
+      - desktop
+      - phone
       description: Which Playwright project to run (all, desktop or phone)
   container:
     image: mcr.microsoft.com/playwright:v1.49.1-noble
@@ -69,6 +75,11 @@ spec:
     # (container env is computed before services start). Playwright skips its own server when BASE_URL is set.
     - name: running app test
       shell: |
+        # The dropdown limits the dashboard; this also stops CLI/API runs with any other value.
+        case "{{ config.project }}" in
+          all|desktop|phone) ;;
+          *) echo "Unknown project '{{ config.project }}'. Use all, desktop or phone."; exit 1 ;;
+        esac
         export BASE_URL="http://{{ services.app.0.ip }}:4173"
         echo "Testing $BASE_URL"
         if [ "{{ config.project }}" = "all" ]; then

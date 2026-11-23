@@ -54,4 +54,4 @@ testkube run testworkflow lights-out-e2e -f
 
 After changing the YAML, push it with `testkube create testworkflow -f testkube/lights-out-e2e.yaml --update`.
 
-Option (`--config key=value`): `project` is `all` (default), `desktop` or `phone`.
+Option (`--config key=value`): `project` is `all` (default), `desktop` or `phone`. The dashboard shows it as a dropdown; any other value fails the "running app test" step straight away.
