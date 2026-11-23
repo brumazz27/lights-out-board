@@ -19,6 +19,8 @@ jobs:
     steps:
     - uses: kubeshop/setup-testkube@v1
       with:
+        # A fixed version skips the GitHub "latest release" lookup, which is rate limited.
+        version: 2.15.2
         organization: ${{ vars.TESTKUBE_ORG_ID }}
         environment: ${{ vars.TESTKUBE_ENV_ID }}
         token: ${{ secrets.TESTKUBE_API_TOKEN }}
