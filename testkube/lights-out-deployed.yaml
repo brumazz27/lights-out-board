@@ -1,0 +1,51 @@
+# Smoke-tests the copy of the Lights Out Board deployed in the cluster (k8s/app.yaml).
+# The lights-out-deployed trigger (testkube/triggers/lights-out-deployed.yaml) runs it
+# whenever the lights-out Deployment changes.
+#
+#   testkube create testworkflow -f testkube/lights-out-deployed.yaml --update
+#   testkube run testworkflow lights-out-deployed -f
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflow
+metadata:
+  name: lights-out-deployed
+  labels:
+    app: lights-out-board
+    tool: playwright
+spec:
+  config:
+    url:
+      type: string
+      default: http://lights-out.brubot.svc.cluster.local:4173
+      description: Address of the deployed app
+  use:
+  - name: lights-out-playwright
+  execution:
+    target:
+      match:
+        name:
+        - brubot
+  job:
+    activeDeadlineSeconds: 900
+  steps:
+  # A trigger fires as soon as the Deployment changes, before the new pod may be ready.
+  - name: waiting for the deployed app
+    timeout: 3m
+    shell: |
+      until node -e "fetch('{{ config.url }}/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"; do
+        echo "Waiting for {{ config.url }}..."; sleep 3
+      done
+      echo "App is up"
+  - name: running deployed app test
+    timeout: 10m
+    retry:
+      count: 1
+    shell: |
+      export BASE_URL="{{ config.url }}"
+      echo "Testing $BASE_URL"
+      npx playwright test --project desktop
+  - name: Save test report
+    condition: always
+    artifacts:
+      paths:
+      - test-results/**
+      - playwright-report/**

@@ -1,0 +1,68 @@
+# The Lights Out Board running in the cluster, in the brubot namespace (the Testkube runner's
+# listener watches its own namespace, which is what the lights-out-deployed trigger needs).
+#
+#   kubectl apply -f k8s/app.yaml
+#   kubectl rollout restart deployment/lights-out -n brubot   # fires the trigger
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lights-out
+  namespace: brubot
+  labels:
+    app: lights-out-board
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lights-out-board
+  template:
+    metadata:
+      labels:
+        app: lights-out-board
+    spec:
+      initContainers:
+      # Fetch the page and server script from the main branch.
+      - name: fetch
+        image: alpine/git:2.47.2
+        args: ["clone", "--depth=1", "--branch=main", "https://github.com/brumazz27/lights-out-board", "/app"]
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      containers:
+      - name: web
+        image: node:22-alpine
+        workingDir: /app
+        command: ["node", "scripts/serve.mjs"]
+        ports:
+        - containerPort: 4173
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 4173
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 48Mi
+          limits:
+            memory: 128Mi
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      volumes:
+      - name: app
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lights-out
+  namespace: brubot
+  labels:
+    app: lights-out-board
+spec:
+  selector:
+    app: lights-out-board
+  ports:
+  - port: 4173
+    targetPort: 4173

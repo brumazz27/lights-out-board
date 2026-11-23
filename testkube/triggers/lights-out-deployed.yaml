@@ -1,0 +1,23 @@
+# Runs lights-out-deployed whenever the lights-out Deployment in the brubot namespace changes
+# (a new rollout, a restart, an image or config change).
+#
+#   testkube create testtrigger -f testkube/triggers/lights-out-deployed.yaml --update
+apiVersion: tests.testkube.io/v1
+kind: TestTrigger
+metadata:
+  name: lights-out-deployed
+  namespace: brubot
+  labels:
+    app: lights-out-board
+spec:
+  resource: deployment
+  resourceSelector:
+    name: lights-out
+    namespace: brubot
+  event: modified
+  action: run
+  execution: testworkflow
+  # One run at a time; a rollout changes the Deployment several times in a row.
+  concurrencyPolicy: forbid
+  testSelector:
+    name: lights-out-deployed

@@ -1,0 +1,29 @@
+# Runs the Testkube end-to-end workflow on every pull request, against the PR's own commit.
+# Needs:
+#   repo variables  TESTKUBE_ORG_ID, TESTKUBE_ENV_ID
+#   repo secret     TESTKUBE_API_TOKEN (a Testkube API token, tkcapi_...)
+name: Testkube
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: lights-out-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: kubeshop/setup-testkube@v1
+      with:
+        organization: ${{ vars.TESTKUBE_ORG_ID }}
+        environment: ${{ vars.TESTKUBE_ENV_ID }}
+        token: ${{ secrets.TESTKUBE_API_TOKEN }}
+
+    - name: Run lights-out-e2e on this commit
+      env:
+        REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: testkube run testworkflow lights-out-e2e --config revision="$REVISION" --config project=all -f
