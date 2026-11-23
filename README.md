@@ -73,7 +73,11 @@ Every pull request runs `lights-out-e2e` against the PR's own commit (`revision`
 
 ### Failure notifications
 
-A Testkube webhook calls a URL when a Lights Out Board workflow fails or is aborted (`end-testworkflow-failed`, `end-testworkflow-aborted`, selector `app=lights-out-board`).
+Not set up yet. To get a call (for example a Slack incoming webhook) when a Lights Out Board workflow fails or is aborted:
+
+```bash
+testkube create webhook --name lights-out-failures --uri <URL> --events end-testworkflow-failed --events end-testworkflow-aborted --selector app=lights-out-board
+```
 
 ### Create or update everything
 
