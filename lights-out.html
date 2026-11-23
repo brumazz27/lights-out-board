@@ -56,7 +56,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
 fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px }
 .chips { display: flex; flex-wrap: wrap; gap: 6px }
-.chip input { position: absolute; opacity: 0; pointer-events: none }
+.chip { position: relative }
+.chip input { position: absolute; inset: 0; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; pointer-events: none }
 .chip span { display: inline-block; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.85rem; cursor: pointer; user-select: none; background: var(--bg) }
 .chip input:checked + span { background: var(--amber-soft); border-color: var(--amber); color: var(--amber-ink); font-weight: 600 }
 .primary { font: 700 1.05rem var(--display); text-transform: uppercase; letter-spacing: 0.06em; background: var(--amber); color: #241700; border: 0; border-radius: 6px; padding: 12px; cursor: pointer }
@@ -143,7 +144,7 @@ footer { color: var(--muted); font-size: 0.8rem; text-align: center; padding-blo
     </section>
   </div>
 </main>
-<footer><div class="wrap">A demo community board. Reports are visible to everyone who can open this page.</div></footer>
+<footer><div class="wrap">A demo community board. <span id="store-mode" data-testid="store-mode" data-mode="pending">Reports are visible to everyone who can open this page.</span></div></footer>
 
 <script>
 const ISSUES = [
@@ -185,7 +186,7 @@ function render() {
     return;
   }
   feed.innerHTML = list.map(r => `
-    <article class="card${r.fixed ? " fixed" : ""}">
+    <article class="card${r.fixed ? " fixed" : ""}" data-testid="report-card" data-report-id="${esc(r.id)}" data-status="${r.fixed ? "fixed" : "open"}">
       <div class="plate">${esc(r.plate || "NO PLATE")}<small>${esc(r.state || "—")}</small></div>
       <div class="car">${esc([r.color, r.model].filter(Boolean).join(" ") || "Unknown vehicle")}</div>
       <div class="meta">${esc(r.where || "Location not given")}${r.when ? " · " + esc(fmtWhen(r.when)) : ""}</div>
@@ -239,12 +240,40 @@ $("feed").addEventListener("click", async e => {
   } catch { b.disabled = false; setMsg("That change didn't save. Try again.", "err"); }
 });
 
+// Browser-only store with the same calls the page uses on the claude.ai db.
+// Used when the page runs outside claude.ai (local dev, CI, Testkube), so it can be tested end to end.
+function localStore() {
+  const KEY = "lights-out.reports.v1", subs = new Set();
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  let mem = load();
+  const snapshot = () => ({ metadata: { fromCache: false }, docs: Object.entries(mem).map(([id, d]) => ({ id, data: () => d })) });
+  const emit = () => { const s = snapshot(); subs.forEach(f => f(s)); };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch {} emit(); };
+  addEventListener("storage", e => { if (e.key === KEY) { mem = load(); emit(); } });
+  return { collection: () => ({
+    add: async data => { const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); mem[id] = data; save(); return { id }; },
+    doc: id => ({
+      update: async patch => { if (!mem[id]) throw { code: "invalid_argument" }; mem[id] = { ...mem[id], ...patch }; save(); },
+      delete: async () => { delete mem[id]; save(); }
+    }),
+    onSnapshot: next => { subs.add(next); queueMicrotask(() => next(snapshot())); return () => subs.delete(next); }
+  }) };
+}
+
+function setMode(mode, text) { const m = $("store-mode"); m.dataset.mode = mode; m.textContent = text; }
+
 (async () => {
-  const [d, user] = await Promise.all([claude.use("db"), claude.use("user")]);
-  db = d;
-  if (user) {
-    try { myId = await user.id(); } catch {}
-    try { const w = await user.can("data.write"); if (w === false) canWrite = false; } catch {}
+  if (!window.claude || typeof window.claude.use !== "function") {
+    db = localStore(); myId = "local";
+    setMode("local", "Running outside claude.ai: reports are saved in this browser only.");
+  } else {
+    const [d, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+    db = d;
+    if (user) {
+      try { myId = await user.id(); } catch {}
+      try { const w = await user.can("data.write"); if (w === false) canWrite = false; } catch {}
+    }
+    setMode(db ? "shared" : "unavailable", "Reports are visible to everyone who can open this page.");
   }
   if (!canWrite) { $("submit").disabled = true; setMsg("You have view-only access, so you can read reports but not post them."); }
   if (!db) {
