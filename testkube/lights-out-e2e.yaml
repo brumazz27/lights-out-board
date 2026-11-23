@@ -70,23 +70,54 @@ spec:
           requests:
             cpu: 100m
             memory: 64Mi
-    steps:
-    # The service address is only known once the service is up, so it's set inside the script
+    # The service address is only known once the service is up, so it's set inside each script
     # (container env is computed before services start). Playwright skips its own server when BASE_URL is set.
+    steps:
+    # project = all: desktop and phone run at the same time, each in its own worker pod.
+    - name: running app tests in parallel
+      condition: "config.project == 'all'"
+      parallel:
+        matrix:
+          project: [desktop, phone]
+        description: "{{ matrix.project }}"
+        # Workers don't share the main pod's files: copy the repo (with node_modules) in,
+        # and copy each project's results back into its own folder for the report step.
+        transfer:
+        - from: /data/repo
+        fetch:
+        - from: /data/repo/test-results
+          to: "/data/repo/test-results/{{ matrix.project }}"
+        - from: /data/repo/playwright-report
+          to: "/data/repo/playwright-report/{{ matrix.project }}"
+        container:
+          image: mcr.microsoft.com/playwright:v1.49.1-noble
+          workingDir: /data/repo
+          env:
+          - name: HOME
+            value: /tmp
+          - name: CI
+            value: "true"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+        shell: |
+          export BASE_URL="http://{{ services.app.0.ip }}:4173"
+          echo "Testing $BASE_URL ({{ matrix.project }})"
+          npx playwright test --project "{{ matrix.project }}"
+
+    # Any other value: one run, no parallel workers.
     - name: running app test
+      condition: "config.project != 'all'"
       shell: |
         # The dropdown limits the dashboard; this also stops CLI/API runs with any other value.
         case "{{ config.project }}" in
-          all|desktop|phone) ;;
+          desktop|phone) ;;
           *) echo "Unknown project '{{ config.project }}'. Use all, desktop or phone."; exit 1 ;;
         esac
         export BASE_URL="http://{{ services.app.0.ip }}:4173"
         echo "Testing $BASE_URL"
-        if [ "{{ config.project }}" = "all" ]; then
-          npx playwright test
-        else
-          npx playwright test --project "{{ config.project }}"
-        fi
+        npx playwright test --project "{{ config.project }}"
 
   - name: Save test report
     condition: always

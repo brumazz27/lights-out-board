@@ -38,9 +38,11 @@ The workflow clones this repository and runs the suite in the official Playwrigh
 
 1. **Install dependencies**: `npm ci` in the test pod.
 2. **Start services**: Testkube starts an `app` pod from `node:22-alpine`, copies `lights-out.html` and `scripts/` into it, runs `scripts/serve.mjs`, and waits until `GET /healthz` on port 4173 answers.
-3. **Run Playwright tests**: the tests run against `http://{{ services.app.0.ip }}:4173`, the service's pod IP, so they reach the app over the cluster network instead of `localhost`. The address is set inside the step's script, because container env is computed before services exist.
+3. **Run Playwright tests**: the tests run against `http://{{ services.app.0.ip }}:4173`, the service's pod IP, so they reach the app over the cluster network instead of `localhost`. The address is set inside each script, because container env is computed before services exist. Only one of these two steps runs:
+   - **running app tests in parallel** (`project` = `all`): two parallel workers, `desktop` and `phone`, each in its own pod, run at the same time. Each worker gets a copy of the repo and sends its `test-results/` and `playwright-report/` back into a folder named after its project.
+   - **running app test** (`project` = `desktop` or `phone`): a single run of that project in the test pod, with no workers.
 4. **Stop services**: Testkube stops the app and keeps its logs with the execution.
-5. **Save test report**: the JUnit and HTML reports are saved as artifacts, even when tests fail. Testkube reads the JUnit file to show results per test.
+5. **Save test report**: the JUnit and HTML reports are saved as artifacts, even when tests fail (`test-results/desktop/junit.xml` and `test-results/phone/junit.xml` for a parallel run). Testkube reads the JUnit files to show results per test.
 
 The repository is public, so the runner clones it without credentials. Create the workflow and run it (add `--target name=<runner>` to pick a runner):
 
