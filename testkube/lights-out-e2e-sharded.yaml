@@ -1,0 +1,78 @@
+# Splits the whole Playwright suite (both projects) into shards that run at the same time,
+# then merges the shard reports into one HTML report and one JUnit file.
+#
+#   testkube create testworkflow -f testkube/lights-out-e2e-sharded.yaml --update
+#   testkube run testworkflow lights-out-e2e-sharded --config shards=4 -f
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflow
+metadata:
+  name: lights-out-e2e-sharded
+  labels:
+    app: lights-out-board
+    tool: playwright
+spec:
+  config:
+    shards:
+      type: integer
+      default: 3
+      description: How many shards to split the suite into
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit to test
+
+  use:
+  - name: lights-out-playwright
+    config:
+      revision: "{{ config.revision }}"
+  - name: lights-out-app
+    config:
+      revision: "{{ config.revision }}"
+
+  execution:
+    target:
+      match:
+        name:
+        - brubot
+  job:
+    activeDeadlineSeconds: 1800
+
+  steps:
+  - name: running sharded app tests
+    timeout: 10m
+    parallel:
+      count: "config.shards"
+      description: "shard {{ index + 1 }} of {{ count }}"
+      transfer:
+      - from: /data/repo
+      # Each shard writes a blob report (named after its shard); all of them land in one folder.
+      fetch:
+      - from: /data/repo/blob-report
+        to: /data/reports
+      container:
+        image: mcr.microsoft.com/playwright:v1.49.1-noble
+        workingDir: /data/repo
+        env:
+        - name: HOME
+          value: /tmp
+        - name: CI
+          value: "true"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+      shell: |
+        export BASE_URL="http://{{ services.app.0.ip }}:4173"
+        echo "Shard {{ index + 1 }}/{{ count }} testing $BASE_URL"
+        npx playwright test --reporter blob --shard "{{ index + 1 }}/{{ count }}"
+
+  - name: Merge shard reports
+    condition: always
+    shell: |
+      ls /data/reports
+      PLAYWRIGHT_JUNIT_OUTPUT_FILE=test-results/junit.xml \
+        npx playwright merge-reports --reporter html,junit /data/reports
+    artifacts:
+      paths:
+      - test-results/**
+      - playwright-report/**

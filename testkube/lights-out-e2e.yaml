@@ -1,8 +1,9 @@
-# Runs the Playwright end-to-end suite for the Lights Out Board.
-# The app runs as a Testkube service (its own pod, built from this repo), and the tests
-# reach it over the cluster network, the same way they would reach a deployed copy.
+# Runs the Playwright end-to-end suite for the Lights Out Board against the app running as a
+# Testkube service. Setup comes from two templates (testkube/templates/):
+#   lights-out-playwright  clone, Playwright image, npm ci
+#   lights-out-app         the app as a service at http://{{ services.app.0.ip }}:4173
 #
-#   testkube create testworkflow -f testkube/lights-out-e2e.yaml
+#   testkube create testworkflow -f testkube/lights-out-e2e.yaml --update
 #   testkube run testworkflow lights-out-e2e -f
 apiVersion: testworkflows.testkube.io/v1
 kind: TestWorkflow
@@ -12,10 +13,6 @@ metadata:
     app: lights-out-board
     tool: playwright
 spec:
-  content:
-    git:
-      uri: https://github.com/brumazz27/lights-out-board
-      revision: main
   config:
     project:
       type: string
@@ -27,97 +24,95 @@ spec:
       - desktop
       - phone
       description: Which Playwright project to run (all, desktop or phone)
-  container:
-    image: mcr.microsoft.com/playwright:v1.49.1-noble
-    workingDir: /data/repo
-    env:
-    # git and npm write config and caches under $HOME; "/" isn't writable in the runner pod.
-    - name: HOME
-      value: /tmp
-    - name: CI
-      value: "true"
-    resources:
-      requests:
-        cpu: 500m
-        memory: 1Gi
-  steps:
-  - name: Install dependencies
-    shell: npm ci --no-audit --no-fund
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit to test (GitHub Actions passes the PR's commit)
 
-  - name: Run Playwright tests
-    services:
-      # The app under test. A service runs in its own pod and doesn't share the cloned repo,
-      # so the page and its server script are copied in from the execution pod.
-      app:
-        description: Lights Out Board web server
-        image: node:22-alpine
-        workingDir: /app
-        transfer:
-        - from: /data/repo
-          to: /app
-          files:
-          - lights-out.html
-          - scripts/**
-        shell: node scripts/serve.mjs
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 4173
-          periodSeconds: 1
-        timeout: 2m
-        logs: always
+  use:
+  - name: lights-out-playwright
+    config:
+      revision: "{{ config.revision }}"
+  - name: lights-out-app
+    config:
+      revision: "{{ config.revision }}"
+
+  # Run on the brubot runner unless a run asks for another one (also applies to cron and triggers).
+  execution:
+    target:
+      match:
+        name:
+        - brubot
+
+  # Nightly run at 06:00 UTC with the default config (both projects, main).
+  events:
+  - cronjob:
+      cron: "0 6 * * *"
+      timezone: Etc/UTC
+      labels:
+        trigger: nightly
+
+  # Give up on a stuck run: wait at most 10 minutes in the queue and 30 minutes in total.
+  timeouts:
+    queue: 10m
+  job:
+    activeDeadlineSeconds: 1800
+
+  steps:
+  # The service address is only known once the service is up, so it's set inside each script
+  # (container env is computed before services start). Playwright skips its own server when BASE_URL is set.
+
+  # project = all: desktop and phone run at the same time, each in its own worker pod.
+  - name: running app tests in parallel
+    condition: "config.project == 'all'"
+    timeout: 10m
+    retry:
+      count: 1
+    parallel:
+      matrix:
+        project: [desktop, phone]
+      description: "{{ matrix.project }}"
+      # Workers don't share the main pod's files: copy the repo (with node_modules) in,
+      # and copy each project's results back into its own folder for the report step.
+      transfer:
+      - from: /data/repo
+      fetch:
+      - from: /data/repo/test-results
+        to: "/data/repo/test-results/{{ matrix.project }}"
+      - from: /data/repo/playwright-report
+        to: "/data/repo/playwright-report/{{ matrix.project }}"
+      container:
+        image: mcr.microsoft.com/playwright:v1.49.1-noble
+        workingDir: /data/repo
+        env:
+        - name: HOME
+          value: /tmp
+        - name: CI
+          value: "true"
         resources:
           requests:
-            cpu: 100m
-            memory: 64Mi
-    # The service address is only known once the service is up, so it's set inside each script
-    # (container env is computed before services start). Playwright skips its own server when BASE_URL is set.
-    steps:
-    # project = all: desktop and phone run at the same time, each in its own worker pod.
-    - name: running app tests in parallel
-      condition: "config.project == 'all'"
-      parallel:
-        matrix:
-          project: [desktop, phone]
-        description: "{{ matrix.project }}"
-        # Workers don't share the main pod's files: copy the repo (with node_modules) in,
-        # and copy each project's results back into its own folder for the report step.
-        transfer:
-        - from: /data/repo
-        fetch:
-        - from: /data/repo/test-results
-          to: "/data/repo/test-results/{{ matrix.project }}"
-        - from: /data/repo/playwright-report
-          to: "/data/repo/playwright-report/{{ matrix.project }}"
-        container:
-          image: mcr.microsoft.com/playwright:v1.49.1-noble
-          workingDir: /data/repo
-          env:
-          - name: HOME
-            value: /tmp
-          - name: CI
-            value: "true"
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-        shell: |
-          export BASE_URL="http://{{ services.app.0.ip }}:4173"
-          echo "Testing $BASE_URL ({{ matrix.project }})"
-          npx playwright test --project "{{ matrix.project }}"
-
-    # Any other value: one run, no parallel workers.
-    - name: running app test
-      condition: "config.project != 'all'"
+            cpu: 250m
+            memory: 512Mi
       shell: |
-        # The dropdown limits the dashboard; this also stops CLI/API runs with any other value.
-        case "{{ config.project }}" in
-          desktop|phone) ;;
-          *) echo "Unknown project '{{ config.project }}'. Use all, desktop or phone."; exit 1 ;;
-        esac
         export BASE_URL="http://{{ services.app.0.ip }}:4173"
-        echo "Testing $BASE_URL"
-        npx playwright test --project "{{ config.project }}"
+        echo "Testing $BASE_URL ({{ matrix.project }})"
+        npx playwright test --project "{{ matrix.project }}"
+
+  # Any other value: one run, no parallel workers.
+  - name: running app test
+    condition: "config.project != 'all'"
+    timeout: 10m
+    retry:
+      count: 1
+    shell: |
+      # The dropdown limits the dashboard; this also stops CLI/API runs with any other value.
+      case "{{ config.project }}" in
+        desktop|phone) ;;
+        *) echo "Unknown project '{{ config.project }}'. Use all, desktop or phone."; exit 1 ;;
+      esac
+      export BASE_URL="http://{{ services.app.0.ip }}:4173"
+      echo "Testing $BASE_URL"
+      npx playwright test --project "{{ config.project }}"
 
   - name: Save test report
     condition: always

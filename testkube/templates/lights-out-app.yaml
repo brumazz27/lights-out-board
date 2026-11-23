@@ -1,0 +1,41 @@
+# Runs the Lights Out Board as a service for the whole execution. The service fetches the
+# page and server script itself (services don't share the workflow's files), so it doesn't
+# depend on the clone step. Steps reach it at http://{{ services.app.0.ip }}:4173.
+#
+#   testkube create testworkflowtemplate -f testkube/templates/lights-out-app.yaml --update
+apiVersion: testworkflows.testkube.io/v1
+kind: TestWorkflowTemplate
+metadata:
+  name: lights-out-app
+  labels:
+    app: lights-out-board
+spec:
+  config:
+    revision:
+      type: string
+      default: main
+      description: Git branch, tag or commit of the app to serve
+  services:
+    app:
+      description: Lights Out Board web server
+      image: node:22-alpine
+      content:
+        git:
+          uri: https://github.com/brumazz27/lights-out-board
+          revision: "{{ config.revision }}"
+          paths:
+          - lights-out.html
+          - scripts
+      workingDir: /data/repo
+      shell: node scripts/serve.mjs
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: 4173
+        periodSeconds: 1
+      timeout: 2m
+      logs: always
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
