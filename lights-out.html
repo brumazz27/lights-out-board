@@ -56,7 +56,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
 fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px }
 .chips { display: flex; flex-wrap: wrap; gap: 6px }
-.chip input { position: absolute; opacity: 0; pointer-events: none }
+.chip { position: relative }
+.chip input { position: absolute; inset: 0; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; pointer-events: none }
 .chip span { display: inline-block; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.85rem; cursor: pointer; user-select: none; background: var(--bg) }
 .chip input:checked + span { background: var(--amber-soft); border-color: var(--amber); color: var(--amber-ink); font-weight: 600 }
 .primary { font: 700 1.05rem var(--display); text-transform: uppercase; letter-spacing: 0.06em; background: var(--amber); color: #241700; border: 0; border-radius: 6px; padding: 12px; cursor: pointer }
