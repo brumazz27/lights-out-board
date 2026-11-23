@@ -14,7 +14,7 @@ spec:
   content:
     git:
       uri: https://github.com/brumazz27/lights-out-board
-      revision: testkube-e2e # switch to main once this branch is merged
+      revision: main
   config:
     project:
       type: string
