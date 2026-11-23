@@ -34,7 +34,13 @@ BASE_URL=http://localhost:4173 npm test
 
 ## Run the tests in Testkube
 
-The workflow clones this repository, installs dependencies in the official Playwright image (`mcr.microsoft.com/playwright:v1.49.1-noble`, matching `@playwright/test` 1.49.1), runs the suite, and saves the JUnit and HTML reports as artifacts. Testkube reads the JUnit file to show results per test.
+The workflow clones this repository and runs the suite in the official Playwright image (`mcr.microsoft.com/playwright:v1.49.1-noble`, matching `@playwright/test` 1.49.1). The app runs separately, as a [Testkube service](https://docs.testkube.io/articles/test-workflows-services):
+
+1. **Install dependencies**: `npm ci` in the test pod.
+2. **Start services**: Testkube starts an `app` pod from `node:22-alpine`, copies `lights-out.html` and `scripts/` into it, runs `scripts/serve.mjs`, and waits until `GET /healthz` on port 4173 answers.
+3. **Run Playwright tests**: the tests run against `http://{{ services.app.0.ip }}:4173`, the service's pod IP, so they reach the app over the cluster network instead of `localhost`. The address is set inside the step's script, because container env is computed before services exist.
+4. **Stop services**: Testkube stops the app and keeps its logs with the execution.
+5. **Save test report**: the JUnit and HTML reports are saved as artifacts, even when tests fail. Testkube reads the JUnit file to show results per test.
 
 The repository is public, so the runner clones it without credentials. Create the workflow and run it (add `--target name=<runner>` to pick a runner):
 
@@ -48,7 +54,4 @@ testkube run testworkflow lights-out-e2e -f
 
 After changing the YAML, push it with `testkube create testworkflow -f testkube/lights-out-e2e.yaml --update`.
 
-Options (`--config key=value`):
-
-- `project`: `all` (default), `desktop` or `phone`.
-- `baseUrl`: test a deployed copy, for example `--config baseUrl=http://lights-out.default.svc`, instead of the copy the tests start inside the runner pod.
+Option (`--config key=value`): `project` is `all` (default), `desktop` or `phone`.
