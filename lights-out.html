@@ -1,3 +1,4 @@
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lights Out Board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -182,7 +183,7 @@ function render() {
   if (!list.length) {
     feed.innerHTML = reports.length
       ? `<div class="empty"><strong>Nothing matches</strong>Try a different issue or status filter.</div>`
-      : `<div class="empty"><strong>No sightings yet</strong>Use the form to post the first one. A plate isn't required; color, model and location are enough.</div>`;
+      : `<div class="empty"><strong>No sightings yet</strong>Use the form to post the first one. A plate isn't required; color, model and location are enough.${myId === "local" ? " The shared board is unavailable here, so reports stay in this browser. Open the page on claude.ai to share them." : ""}</div>`;
     return;
   }
   feed.innerHTML = list.map(r => `
@@ -202,15 +203,17 @@ fIssue.addEventListener("change", render);
 $("f-status").addEventListener("change", render);
 
 function setMsg(t, cls) { const m = $("msg"); m.textContent = t; m.className = "msg " + (cls || ""); }
+// Shows a validation error and moves focus to the field that needs fixing.
+function invalid(field, t) { setMsg(t, "err"); field.focus(); }
 
 $("form").addEventListener("submit", async e => {
   e.preventDefault();
   if (!db) { setMsg("Reports can't be saved right now. Open this page while signed in to claude.ai.", "err"); return; }
   const issues = [...chips.querySelectorAll("input:checked")].map(i => i.value);
   const color = $("color").value.trim(), model = $("model").value.trim(), where = $("where").value.trim();
-  if (!issues.length) return setMsg("Pick at least one problem you noticed.", "err");
-  if (!color && !model && !$("plate").value.trim()) return setMsg("Add a plate, color or model so the car can be recognized.", "err");
-  if (!where) return setMsg("Add where you saw the car.", "err");
+  if (!issues.length) return invalid(chips.querySelector("input"), "Pick at least one problem you noticed.");
+  if (!color && !model && !$("plate").value.trim()) return invalid($("color"), "Add a plate, color or model so the car can be recognized.");
+  if (!where) return invalid($("where"), "Add where you saw the car.");
   const body = {
     plate: $("plate").value.trim().toUpperCase(), state: $("state").value.trim().toUpperCase(),
     color, model, issues, where, when: $("when").value, notes: $("notes").value.trim(),
@@ -267,7 +270,14 @@ function setMode(mode, text) { const m = $("store-mode"); m.dataset.mode = mode;
     db = localStore(); myId = "local";
     setMode("local", "Running outside claude.ai: reports are saved in this browser only.");
   } else {
-    const [d, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+    let d, user;
+    try { [d, user] = await Promise.all([claude.use("db"), claude.use("user")]); }
+    catch {
+      setMode("unavailable", "The shared board is unavailable right now.");
+      $("feed").innerHTML = `<div class="empty"><strong>Couldn't reach the shared board</strong>Check your connection, then reload the page to try again.</div>`;
+      $("submit").disabled = true;
+      return;
+    }
     db = d;
     if (user) {
       try { myId = await user.id(); } catch {}
